@@ -7,6 +7,11 @@
    ===================================================================== */
 
 const CURRENCY = "F";
+// Si le frontend est déployé séparément du backend (ex. Vercel + Railway),
+// renseigne ici l'URL complète de ton API Railway, ex. :
+// "https://empire229-panam-production.up.railway.app/api"
+// Laisse vide ("") si frontend et backend sont servis ensemble (Option A).
+const API_BASE = "";
 let token = localStorage.getItem("e229_token") || null;
 let currentUser = null;
 let currentScreen = "dashboard";
@@ -40,7 +45,7 @@ function toast(msg, isErr){
 
 /* ---------------- API helper ---------------- */
 async function api(method, path, body){
-  const res = await fetch("/api" + path, {
+  const res = await fetch(API_BASE + "/api" + path, {
     method,
     headers: Object.assign(
       { "Content-Type": "application/json" },
@@ -282,7 +287,7 @@ function renderPOS(){
         <div class="cart-panel">
           <h3>Vente en cours</h3>
           <div id="cart-lines">
-            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Cliquez sur un article pour l\\'ajouter</div>'}
+            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Cliquez sur un article pour l\'ajouter</div>'}
           </div>
           <select class="cart-select" id="cart-client">
             <option value="">Client de passage</option>
@@ -330,7 +335,7 @@ async function checkout(){
     toast('Vente encaissée : ' + fmt(sale.total));
     await refreshAll();
   }catch(e){
-    toast(e.message || 'Erreur lors de l\\'encaissement', true);
+    toast(e.message || 'Erreur lors de l\'encaissement', true);
     btn.disabled = false; btn.textContent = 'Encaisser';
   }
 }
@@ -373,7 +378,7 @@ function renderInventory(){
 function productForm(existing){
   const p = existing || {brand:'',name:'',category:'Téléphones',condition:'Neuf',price:'',cost:'',stock:''};
   return `
-    <h3>${existing?'Modifier l\\'article':'Ajouter un article'}</h3>
+    <h3>${existing?'Modifier l\'article':'Ajouter un article'}</h3>
     <div class="field-row">
       <div class="field"><label>Marque</label><input id="f-brand" value="${esc(p.brand)}"></div>
       <div class="field"><label>Modèle</label><input id="f-name" value="${esc(p.name)}"></div>
@@ -620,7 +625,7 @@ function trocHandlers(){
       condition: selectedTrocCondition,
       paymentMethod: trocPay
     };
-    if(!payload.deviceInModel || !payload.outProductId || payload.outPrice<=0){ toast('Merci de renseigner l\\'appareil repris et l\\'article donné', true); return; }
+    if(!payload.deviceInModel || !payload.outProductId || payload.outPrice<=0){ toast('Merci de renseigner l\'appareil repris et l\'article donné', true); return; }
     try{
       const troc = await api('POST', '/trocs', payload);
       toast('Échange validé — complément ' + fmt(troc.complement));
@@ -797,7 +802,7 @@ function reportsHandlers(){
   btn.addEventListener('click', async ()=>{
     try{
       const res = await fetch('/api/reports/export.csv', { headers: { Authorization: 'Bearer ' + token } });
-      if(!res.ok) throw new Error('Échec de l\\'export');
+      if(!res.ok) throw new Error('Échec de l\'export');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
