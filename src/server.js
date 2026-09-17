@@ -14,6 +14,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Nécessaire derrière un reverse proxy (Railway, Render, Nginx...) pour que
+// express-rate-limit identifie correctement l'IP réelle du visiteur via
+// l'en-tête X-Forwarded-For, plutôt que celle du proxy lui-même.
+app.set("trust proxy", 1);
+
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false })); // CSP à affiner selon votre nom de domaine en prod
 app.use(express.json({ limit: "1mb" }));
