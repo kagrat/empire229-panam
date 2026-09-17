@@ -24,6 +24,8 @@ const state = {
 let cart = [];
 let selectedPaymentMethod = "Espèces";
 let selectedClientForSale = "";
+let manualClientName = "";
+let mobileMoneyRef = "";
 let posFilter = "Tous";
 let inventoryFilter = "Tous";
 let selectedTrocCondition = "Bon";
@@ -308,8 +310,8 @@ function renderDashboard(){
       </div>
       <div class="panel card-pad" style="margin-top:16px;">
         <div class="card-head"><h3>Dernières ventes</h3><button class="link" data-act="go-pos">Nouvelle vente →</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Client</th><th>Articles</th><th>Montant</th><th>Paiement</th><th>Vendeur</th></tr></thead>
-          <tbody>${lastSales.length ? lastSales.map(s=>`<tr><td>${esc(s.clientName||'Client passage')}</td><td>${esc((s.items||[]).map(i=>i.name+(i.qty>1?' x'+i.qty:'')).join(', '))}</td><td>${fmt(s.total)}</td><td>${esc(s.paymentMethod)}</td><td>${esc(s.soldBy||'')}</td></tr>`).join('') : '<tr><td colspan="5" class="empty-state">Aucune vente enregistrée</td></tr>'}</tbody>
+        <div class="table-wrap"><table><thead><tr><th>Client</th><th>Articles</th><th>Montant</th><th>Paiement</th><th>Vendeur</th><th></th></tr></thead>
+          <tbody>${lastSales.length ? lastSales.map(s=>`<tr><td>${esc(s.clientName||'Client de passage')}</td><td>${esc((s.items||[]).map(i=>i.name+(i.qty>1?' x'+i.qty:'')).join(', '))}</td><td>${fmt(s.total)}</td><td>${esc(s.paymentMethod)}</td><td>${esc(s.soldBy||'')}</td><td><button class="btn btn-ghost btn-sm" data-receipt="${s.id}">Reçu</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty-state">Aucune vente enregistrée</td></tr>'}</tbody>
         </table></div>
       </div>
     </div>
@@ -328,12 +330,32 @@ function renderPOS(){
   const cats = ['Tous', ...new Set(state.products.map(p=>p.category))];
   const filtered = state.products.filter(p=> posFilter==='Tous' || p.category===posFilter);
   const total = cart.reduce((a,c)=>a+c.price*c.qty,0);
+  const availableForSelect = state.products.filter(p=>p.stock>0);
   return `
   <div class="screen active">
     <div class="topbar"><div><h1>Point de vente</h1><div class="stamp">${esc(currentUser.name)} · ${esc(state.settings.location||'')}</div></div></div>
     <div style="padding:30px 34px 60px 34px;">
       <div class="pos-layout">
         <div>
+          <div class="panel card-pad" style="margin-bottom:18px;">
+            <div class="card-head"><h3>Ajouter un article</h3></div>
+            <div class="field-row" style="align-items:end;">
+              <div class="field" style="margin-bottom:0;">
+                <label>Article (depuis l'inventaire)</label>
+                <select id="pos-add-select">
+                  <option value="">— Choisir un article —</option>
+                  ${availableForSelect.map(p=>`<option value="${p.id}">${esc(p.brand?p.brand+' — ':'')}${esc(p.name)} — ${fmt(p.price)} (${p.stock} en stock)</option>`).join('')}
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0;max-width:110px;">
+                <label>Quantité</label>
+                <input id="pos-add-qty" type="number" min="1" value="1">
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <button class="btn btn-primary" id="pos-add-btn" style="width:100%;justify-content:center;">+ Ajouter au panier</button>
+              </div>
+            </div>
+          </div>
           <div class="filters" id="pos-filters">${cats.map(c=>`<div class="chip ${c===posFilter?'active':''}" data-cat="${esc(c)}">${esc(c)}</div>`).join('')}</div>
           <div class="pos-grid" id="pos-grid">
             ${filtered.length ? filtered.map(p=>`
@@ -346,14 +368,16 @@ function renderPOS(){
         <div class="cart-panel">
           <h3>Vente en cours</h3>
           <div id="cart-lines">
-            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Cliquez sur un article pour l\'ajouter</div>'}
+            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Choisissez un article ci-contre pour l\'ajouter</div>'}
           </div>
           <select class="cart-select" id="cart-client">
-            <option value="">Client de passage</option>
+            <option value="">Client de passage (saisir un nom)</option>
             ${state.clients.map(c=>`<option value="${c.id}" ${selectedClientForSale===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
           </select>
+          <input class="cart-select" id="cart-client-name" placeholder="Nom du client (optionnel)" value="${esc(manualClientName)}" style="${selectedClientForSale?'display:none;':''}">
           <div class="cart-total"><span class="lbl">Total</span><span>${fmt(total)}</span></div>
           <div class="pay-methods" id="pay-methods">${['Espèces','Mobile Money','Crédit'].map(m=>`<div class="pm ${selectedPaymentMethod===m?'sel':''}" data-pm="${m}">${m}</div>`).join('')}</div>
+          <input class="cart-select" id="cart-momo-ref" placeholder="Référence de la transaction Mobile Money" value="${esc(mobileMoneyRef)}" style="${selectedPaymentMethod==='Mobile Money'?'':'display:none;'}margin-top:10px;">
           <button class="btn btn-gold cart-cta" id="checkout-btn" ${!cart.length?'disabled':''}>Encaisser</button>
         </div>
       </div>
@@ -366,33 +390,57 @@ function posHandlers(){
     el.addEventListener('click', ()=>{
       const p = state.products.find(x=>x.id===el.dataset.id);
       if(!p || p.stock<=0) return;
-      const existing = cart.find(c=>c.productId===p.id);
-      const inCartQty = existing ? existing.qty : 0;
-      if(inCartQty+1 > p.stock){ toast('Stock insuffisant pour ' + p.name, true); return; }
-      if(existing) existing.qty++; else cart.push({productId:p.id, name:p.name, price:p.price, qty:1});
-      renderScreen();
+      addToCart(p, 1);
     });
+  });
+  const addSelect = document.getElementById('pos-add-select');
+  const addQty = document.getElementById('pos-add-qty');
+  const addBtn = document.getElementById('pos-add-btn');
+  if(addBtn) addBtn.addEventListener('click', ()=>{
+    const p = state.products.find(x=>x.id===addSelect.value);
+    const qty = Math.max(1, Number(addQty.value)||1);
+    if(!p){ toast('Choisissez un article dans la liste', true); return; }
+    addToCart(p, qty);
   });
   document.querySelectorAll('.cl-rm').forEach(el=> el.addEventListener('click', ()=>{ cart.splice(Number(el.dataset.i),1); renderScreen(); }));
   document.querySelectorAll('#pay-methods .pm').forEach(el=> el.addEventListener('click', ()=>{ selectedPaymentMethod = el.dataset.pm; renderScreen(); }));
   const clientSel = document.getElementById('cart-client');
-  if(clientSel) clientSel.addEventListener('change', e=>{ selectedClientForSale = e.target.value; });
+  if(clientSel) clientSel.addEventListener('change', e=>{ selectedClientForSale = e.target.value; renderScreen(); });
+  const clientNameInput = document.getElementById('cart-client-name');
+  if(clientNameInput) clientNameInput.addEventListener('input', e=>{ manualClientName = e.target.value; });
+  const momoInput = document.getElementById('cart-momo-ref');
+  if(momoInput) momoInput.addEventListener('input', e=>{ mobileMoneyRef = e.target.value; });
   const checkoutBtn = document.getElementById('checkout-btn');
   if(checkoutBtn) checkoutBtn.addEventListener('click', checkout);
 }
+function addToCart(p, qty){
+  const existing = cart.find(c=>c.productId===p.id);
+  const inCartQty = existing ? existing.qty : 0;
+  if(inCartQty+qty > p.stock){ toast('Stock insuffisant pour ' + p.name, true); return; }
+  if(existing) existing.qty += qty; else cart.push({productId:p.id, name:p.name, price:p.price, qty});
+  renderScreen();
+}
 async function checkout(){
   if(!cart.length) return;
+  if(selectedPaymentMethod === 'Mobile Money' && !mobileMoneyRef.trim()){
+    toast('Merci de renseigner la référence de la transaction Mobile Money', true);
+    return;
+  }
   const btn = document.getElementById('checkout-btn');
   btn.disabled = true; btn.textContent = 'Encaissement…';
   try{
     const sale = await api('POST', '/sales', {
       items: cart.map(c=>({productId:c.productId, qty:c.qty})),
       paymentMethod: selectedPaymentMethod,
-      clientId: selectedClientForSale || null
+      clientId: selectedClientForSale || null,
+      manualClientName: manualClientName,
+      mobileMoneyRef: mobileMoneyRef
     });
     cart = []; selectedClientForSale = ''; selectedPaymentMethod = 'Espèces';
+    manualClientName = ''; mobileMoneyRef = '';
     toast('Vente encaissée : ' + fmt(sale.total));
     await refreshAll();
+    openReceipt(sale);
   }catch(e){
     toast(e.message || 'Erreur lors de l\'encaissement', true);
     btn.disabled = false; btn.textContent = 'Encaisser';
@@ -1026,6 +1074,157 @@ function employeesHandlers(){
 }
 
 /* ======================================================================
+   REÇU DE VENTE (impression / export PDF via le navigateur)
+   ====================================================================== */
+const UNITES = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix",
+  "onze", "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf"];
+const DIZAINES = ["", "dix", "vingt", "trente", "quarante", "cinquante", "soixante", "soixante-dix", "quatre-vingt", "quatre-vingt-dix"];
+
+function centaineEnLettres(n){
+  n = Math.floor(n);
+  let s = "";
+  const c = Math.floor(n/100), r = n%100;
+  if(c > 0) s += (c>1? UNITES[c]+" cent" : "cent") + (c>1 && r===0 ? "s" : "") + (r>0?" ":"");
+  if(r > 0){
+    if(r < 20) s += UNITES[r];
+    else{
+      const d = Math.floor(r/10), u = r%10;
+      if(d===7||d===9){ s += DIZAINES[d-1] + "-" + UNITES[10+u]; }
+      else{
+        s += DIZAINES[d] + (u>0 ? (u===1 && d!==8 ? " et un" : "-"+UNITES[u]) : (d===8?"s":""));
+      }
+    }
+  }
+  return s;
+}
+function nombreEnLettres(n){
+  n = Math.floor(Math.max(0, n));
+  if(n === 0) return "zéro";
+  const millions = Math.floor(n/1000000);
+  const milliers = Math.floor((n%1000000)/1000);
+  const reste = n%1000;
+  let parts = [];
+  if(millions>0) parts.push((millions>1?centaineEnLettres(millions)+" millions":"un million"));
+  if(milliers>0) parts.push((milliers>1?centaineEnLettres(milliers)+" mille":"mille"));
+  if(reste>0) parts.push(centaineEnLettres(reste));
+  return parts.join(" ").trim();
+}
+
+function receiptHTML(sale){
+  const s = state.settings || {};
+  const dateStr = new Date(sale.date).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
+  const receiptNo = 'REC-' + (sale.id||'').slice(0,8).toUpperCase();
+  const rows = (sale.items||[]).map(it=>{
+    const specs = [it.color, it.storage, it.ram].filter(Boolean).join(' · ');
+    const imeiLine = it.imei ? `<div class="r-imei">IMEI : ${esc(it.imei)}</div>` : '';
+    const specsLine = specs ? `<div class="r-specs">${esc(specs)}</div>` : '';
+    return `<tr>
+      <td>
+        <div class="r-designation">${esc(it.brand?it.brand+' ':'')}${esc(it.name)}</div>
+        ${specsLine}${imeiLine}
+      </td>
+      <td class="r-num">${it.qty}</td>
+      <td class="r-num">${fmt(it.price)}</td>
+      <td class="r-num r-strong">${fmt(it.price*it.qty)}</td>
+    </tr>`;
+  }).join('');
+  const paymentLabel = sale.paymentMethod + (sale.mobileMoneyRef ? ` (réf. ${esc(sale.mobileMoneyRef)})` : '');
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Reçu ${esc(receiptNo)}</title>
+<style>
+  @page{ margin: 18mm 14mm; }
+  *{box-sizing:border-box;}
+  body{ font-family:'Segoe UI', Arial, sans-serif; color:#181A22; margin:0; padding:28px; background:#F6F4EE; }
+  .sheet{ max-width:760px; margin:0 auto; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 10px 30px rgba(17,20,42,.12); }
+  .r-head{ background:linear-gradient(135deg,#1D2142,#11142A); color:#F6F4EE; padding:32px 36px; display:flex; justify-content:space-between; align-items:flex-start; }
+  .r-head h1{ margin:0; font-size:22px; letter-spacing:.3px; }
+  .r-head .r-sub{ color:#F0C878; font-size:11.5px; font-weight:600; margin-top:4px; letter-spacing:.5px; }
+  .r-head .r-legal{ font-size:11px; color:#B7BAD0; margin-top:10px; line-height:1.6; }
+  .r-head .r-badge{ text-align:right; }
+  .r-head .r-badge .r-no{ font-size:13px; font-weight:700; color:#F0C878; }
+  .r-head .r-badge .r-date{ font-size:11.5px; color:#B7BAD0; margin-top:4px; }
+  .r-body{ padding:30px 36px; }
+  .r-client{ display:flex; justify-content:space-between; margin-bottom:24px; padding-bottom:18px; border-bottom:2px solid #EFEBE0; flex-wrap:wrap; gap:10px; }
+  .r-client .r-block .r-label{ font-size:10.5px; color:#8B8E9C; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+  .r-client .r-block .r-value{ font-size:14.5px; font-weight:700; margin-top:3px; }
+  table{ width:100%; border-collapse:collapse; margin-bottom:22px; }
+  th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:#8B8E9C; font-weight:700; padding:0 10px 10px 10px; border-bottom:2px solid #1D2142; }
+  th.r-num{ text-align:right; }
+  td{ padding:14px 10px; border-bottom:1px solid #EFEBE0; font-size:13.5px; vertical-align:top; }
+  td.r-num{ text-align:right; white-space:nowrap; }
+  .r-designation{ font-weight:700; }
+  .r-specs, .r-imei{ font-size:11px; color:#5B5E6E; margin-top:2px; }
+  .r-strong{ font-weight:700; }
+  .r-totals{ display:flex; justify-content:flex-end; }
+  .r-totals-box{ width:280px; }
+  .r-totals-box .r-line{ display:flex; justify-content:space-between; padding:7px 0; font-size:13px; color:#5B5E6E; }
+  .r-totals-box .r-line.r-net{ border-top:2px solid #1D2142; margin-top:6px; padding-top:12px; font-size:19px; font-weight:800; color:#11142A; }
+  .r-words{ background:#F6F4EE; border-radius:10px; padding:14px 16px; font-size:12px; color:#5B5E6E; margin:22px 0; font-style:italic; }
+  .r-words b{ color:#181A22; font-style:normal; }
+  .r-payment{ display:flex; gap:8px; align-items:center; font-size:12.5px; color:#5B5E6E; margin-bottom:24px; }
+  .r-payment .r-pill{ background:#1D2142; color:#F0C878; padding:4px 12px; border-radius:20px; font-weight:700; font-size:11.5px; }
+  .r-foot{ display:flex; justify-content:space-between; align-items:flex-end; margin-top:36px; padding-top:20px; border-top:1px dashed #D8D4C8; }
+  .r-foot .r-thanks{ font-size:12.5px; color:#8B8E9C; max-width:320px; line-height:1.5; }
+  .r-foot .r-sign{ text-align:center; font-size:12px; color:#5B5E6E; }
+  .r-foot .r-sign .r-sign-line{ margin-top:38px; border-top:1px solid #181A22; padding-top:6px; width:170px; font-weight:600; color:#181A22; }
+  .r-actions{ max-width:760px; margin:18px auto 0 auto; display:flex; gap:10px; justify-content:flex-end; }
+  .r-actions button{ font-family:inherit; border:none; cursor:pointer; border-radius:9px; font-size:13.5px; font-weight:600; padding:10px 18px; }
+  .r-print{ background:#11142A; color:#F0C878; }
+  .r-close{ background:transparent; border:1px solid #D8D4C8; color:#181A22; }
+  @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; border-radius:0; } .r-actions{ display:none; } }
+</style></head>
+<body>
+  <div class="sheet">
+    <div class="r-head">
+      <div>
+        <h1>${esc(s.shopName||'Ma Boutique')}</h1>
+        <div class="r-sub">VENTE DE TÉLÉPHONES PORTABLES ET ACCESSOIRES</div>
+        <div class="r-legal">
+          ${s.rccm?('RCCM : '+esc(s.rccm)+'<br>'):''}${s.ifu?('IFU : '+esc(s.ifu)+'<br>'):''}${s.phone?('Tél : '+esc(s.phone)):''}${s.location?('<br>'+esc(s.location)):''}
+        </div>
+      </div>
+      <div class="r-badge">
+        <div class="r-no">REÇU N° ${esc(receiptNo)}</div>
+        <div class="r-date">${dateStr}</div>
+      </div>
+    </div>
+    <div class="r-body">
+      <div class="r-client">
+        <div class="r-block"><div class="r-label">Client</div><div class="r-value">${esc(sale.clientName||'Client de passage')}</div></div>
+        <div class="r-block"><div class="r-label">Vendu par</div><div class="r-value">${esc(sale.soldBy||'')}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Désignation</th><th class="r-num">Qté</th><th class="r-num">Prix unit.</th><th class="r-num">Montant</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="r-totals"><div class="r-totals-box">
+        <div class="r-line r-net"><span>Net à payer</span><span>${fmt(sale.total)}</span></div>
+      </div></div>
+      <div class="r-words">Arrêté le présent reçu à la somme de : <b>${nombreEnLettres(sale.total).toUpperCase()} FRANCS CFA</b></div>
+      <div class="r-payment">Mode de paiement <span class="r-pill">${esc(paymentLabel)}</span></div>
+      <div class="r-foot">
+        <div class="r-thanks">Merci pour votre confiance. Conservez ce reçu, il pourra vous être demandé en cas de réclamation ou de garantie.</div>
+        <div class="r-sign"><div class="r-sign-line">Le Responsable</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="r-actions">
+    <button class="r-close" onclick="window.close()">Fermer</button>
+    <button class="r-print" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  </div>
+</body></html>`;
+}
+
+function openReceipt(sale){
+  const w = window.open('', '_blank');
+  if(!w){ toast('Autorisez les fenêtres pop-up pour voir le reçu', true); return; }
+  w.document.open();
+  w.document.write(receiptHTML(sale));
+  w.document.close();
+}
+
+/* ======================================================================
    SETTINGS (owner only)
    ====================================================================== */
 function renderSettings(){
@@ -1038,6 +1237,12 @@ function renderSettings(){
         <div class="field"><label>Emplacement</label><input id="s-location" value="${esc(state.settings.location)}"></div>
         <div class="field"><label>Seuil de stock critique</label><input id="s-lowstock" type="number" value="${state.settings.lowStockThreshold}"></div>
         <button class="btn btn-primary" id="save-settings-btn">Enregistrer</button>
+      </div>
+      <div class="panel card-pad" style="margin-top:16px;"><div class="card-head"><h3>Informations légales (imprimées sur les reçus)</h3></div>
+        <div class="field"><label>N° RCCM</label><input id="s-rccm" value="${esc(state.settings.rccm||'')}" placeholder="ex. RB/ABC/21 A 30274"></div>
+        <div class="field"><label>N° IFU</label><input id="s-ifu" value="${esc(state.settings.ifu||'')}" placeholder="ex. 0202112750819"></div>
+        <div class="field"><label>Téléphone</label><input id="s-phone" value="${esc(state.settings.phone||'')}" placeholder="ex. +229 01 67 19 09 52"></div>
+        <button class="btn btn-primary" id="save-legal-btn">Enregistrer</button>
       </div>
       <div class="panel card-pad" style="margin-top:16px;"><div class="card-head"><h3>Mon mot de passe</h3></div>
         <div class="field"><label>Nouveau mot de passe</label><input id="s-mypass" type="password"></div>
@@ -1057,6 +1262,16 @@ function settingsHandlers(){
     try{ await api('PATCH', '/settings', payload); toast('Paramètres enregistrés'); await refreshAll(); }
     catch(e){ toast(e.message, true); }
   });
+  const saveLegal = document.getElementById('save-legal-btn');
+  if(saveLegal) saveLegal.addEventListener('click', async ()=>{
+    const payload = {
+      rccm: document.getElementById('s-rccm').value.trim(),
+      ifu: document.getElementById('s-ifu').value.trim(),
+      phone: document.getElementById('s-phone').value.trim()
+    };
+    try{ await api('PATCH', '/settings', payload); toast('Informations légales enregistrées'); await refreshAll(); }
+    catch(e){ toast(e.message, true); }
+  });
   const chg = document.getElementById('change-pass-btn');
   if(chg) chg.addEventListener('click', async ()=>{
     const np = document.getElementById('s-mypass').value;
@@ -1069,6 +1284,11 @@ function settingsHandlers(){
 /* ---------------- global click delegation ---------------- */
 document.addEventListener('click', e=>{
   if(e.target.closest('[data-act="go-pos"]')) goTo('pos');
+  const receiptBtn = e.target.closest('[data-receipt]');
+  if(receiptBtn){
+    const sale = state.sales.find(s=>s.id===receiptBtn.dataset.receipt);
+    if(sale) openReceipt(sale);
+  }
 });
 
 function attachScreenHandlers(screen){

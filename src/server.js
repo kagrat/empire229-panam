@@ -210,9 +210,12 @@ app.patch("/api/clients/:id", requireAuth, async (req, res) => {
 app.get("/api/sales", requireAuth, (req, res) => res.json(db.all("sales")));
 
 app.post("/api/sales", requireAuth, async (req, res) => {
-  const { items, paymentMethod, clientId } = req.body || {};
+  const { items, paymentMethod, clientId, manualClientName, mobileMoneyRef } = req.body || {};
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Le panier est vide." });
+  }
+  if (paymentMethod === "Mobile Money" && !mobileMoneyRef) {
+    return res.status(400).json({ error: "La référence de la transaction Mobile Money est requise." });
   }
 
   // On revérifie le stock et les prix côté serveur (jamais confiance au client).
@@ -227,7 +230,17 @@ app.post("/api/sales", requireAuth, async (req, res) => {
       return res.status(409).json({ error: `Stock insuffisant pour ${product.name}.` });
     }
     total += product.price * qty;
-    resolvedItems.push({ productId: product.id, name: product.name, price: product.price, qty });
+    resolvedItems.push({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      qty,
+      brand: product.brand || "",
+      imei: product.imei || "",
+      color: product.color || "",
+      storage: product.storage || "",
+      ram: product.ram || ""
+    });
   }
 
   for (const line of resolvedItems) {
@@ -235,7 +248,7 @@ app.post("/api/sales", requireAuth, async (req, res) => {
     await db.update("products", product.id, { stock: product.stock - line.qty });
   }
 
-  let clientName = "Client passage";
+  let clientName = (manualClientName && manualClientName.trim()) || "Client de passage";
   if (clientId) {
     const client = db.findById("clients", clientId);
     if (client) {
@@ -252,6 +265,7 @@ app.post("/api/sales", requireAuth, async (req, res) => {
     items: resolvedItems,
     total,
     paymentMethod: paymentMethod || "Espèces",
+    mobileMoneyRef: paymentMethod === "Mobile Money" ? mobileMoneyRef : "",
     clientId: clientId || null,
     clientName,
     soldBy: req.user.name

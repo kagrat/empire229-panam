@@ -32,7 +32,10 @@ export async function seedIfEmpty() {
       shopName: process.env.SHOP_NAME || "Empire 229 · Panam",
       location: process.env.SHOP_LOCATION || "Boutique Ganhi",
       currency: "F",
-      lowStockThreshold: 5
+      lowStockThreshold: 5,
+      rccm: "",
+      ifu: "",
+      phone: ""
     });
   }
 }
