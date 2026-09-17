@@ -28,6 +28,59 @@ let posFilter = "Tous";
 let inventoryFilter = "Tous";
 let selectedTrocCondition = "Bon";
 
+/* ---------------- listes de référence (marques, modèles, couleurs, capacités) ---------------- */
+const PHONE_BRANDS = ["Samsung","Apple","Tecno","Infinix","Itel","Xiaomi","Oppo","Vivo","Realme","Nokia","Huawei","Autre"];
+const PHONE_MODELS = {
+  "Samsung": ["Galaxy A05","Galaxy A15","Galaxy A25","Galaxy A35","Galaxy A55","Galaxy S23","Galaxy S24","Galaxy Note 20","Galaxy Z Flip5","Galaxy Z Fold5","Autre"],
+  "Apple": ["iPhone SE","iPhone 11","iPhone 12","iPhone 13","iPhone 14","iPhone 15","iPhone 15 Pro","iPhone 15 Pro Max","Autre"],
+  "Tecno": ["Spark 10","Spark 20","Camon 20","Camon 30","Pova 5","Pop 7","Phantom X2","Autre"],
+  "Infinix": ["Hot 30","Hot 40","Note 30","Note 40","Smart 8","Zero 30","Autre"],
+  "Itel": ["A60","A70","P40","P55","S23","Autre"],
+  "Xiaomi": ["Redmi 12","Redmi Note 12","Redmi Note 13","POCO X6","Mi 11","Autre"],
+  "Oppo": ["A17","A58","A78","Reno 10","Reno 11","Autre"],
+  "Vivo": ["Y17","Y28","Y36","V29","Autre"],
+  "Realme": ["C55","C67","Note 50","11 Pro","Autre"],
+  "Nokia": ["105","110","150","G21","G42","Autre"],
+  "Huawei": ["Y6p","Y9a","Nova 11","Nova 12","Autre"],
+  "Autre": ["Autre"]
+};
+const PHONE_COLORS = ["Noir","Blanc","Bleu","Vert","Or","Argent","Gris sidéral","Rouge","Violet","Rose","Autre"];
+const PHONE_STORAGE = ["16 Go","32 Go","64 Go","128 Go","256 Go","512 Go","1 To","Autre"];
+const PHONE_RAM = ["1 Go","2 Go","3 Go","4 Go","6 Go","8 Go","12 Go","16 Go","Autre"];
+
+/** Génère le HTML d'un champ select + champ texte "Autre" caché, réutilisé
+ * pour marque, modèle, couleur, capacité et RAM. */
+function selectWithOther(id, label, options, currentValue){
+  const isKnown = options.includes(currentValue);
+  const isOther = currentValue && !isKnown;
+  return `
+    <div class="field">
+      <label>${label}</label>
+      <select id="${id}">
+        <option value="">—</option>
+        ${options.map(o=>`<option value="${esc(o)}" ${(!isOther && currentValue===o)?'selected':''}>${esc(o)}</option>`).join('')}
+      </select>
+      <input id="${id}-other" placeholder="Précisez : ${label.toLowerCase()}" style="margin-top:8px;${(isOther||currentValue==='Autre')?'':'display:none;'}" value="${isOther?esc(currentValue):''}">
+    </div>`;
+}
+/** Lit la valeur finale d'un champ select+Autre : la saisie libre si "Autre"
+ * est sélectionné, sinon la valeur du select. */
+function readSelectWithOther(id){
+  const sel = document.getElementById(id);
+  const other = document.getElementById(id+'-other');
+  if(!sel) return '';
+  if(sel.value === 'Autre') return (other && other.value.trim()) || '';
+  return sel.value;
+}
+/** Attache le comportement d'affichage du champ "Autre" quand on choisit
+ * "Autre" dans le select correspondant. */
+function wireSelectWithOther(id){
+  const sel = document.getElementById(id);
+  const other = document.getElementById(id+'-other');
+  if(!sel || !other) return;
+  sel.addEventListener('change', ()=>{ other.style.display = sel.value === 'Autre' ? 'block' : 'none'; });
+}
+
 /* ---------------- utils ---------------- */
 function fmt(n){ return (Math.round(n)||0).toLocaleString('fr-FR') + " " + CURRENCY; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -370,6 +423,7 @@ function renderInventory(){
             <div class="prod-body">
               <div class="brand-lbl">${esc((p.brand||'').toUpperCase())}</div>
               <div class="p-name">${esc(p.name)}</div>
+              ${(p.color||p.storage||p.ram) ? `<div class="qty" style="margin-top:2px;">${[p.color,p.storage,p.ram].filter(Boolean).map(esc).join(' · ')}</div>` : ''}
               <div class="p-foot"><span class="price">${fmt(p.price)}</span><span class="qty">${esc(p.category)}</span></div>
               <div class="prod-actions">
                 <button class="btn btn-ghost btn-sm" data-edit="${p.id}">Modifier</button>
@@ -382,16 +436,32 @@ function renderInventory(){
   </div>`;
 }
 function productForm(existing){
-  const p = existing || {brand:'',name:'',category:'Téléphones',condition:'Neuf',price:'',cost:'',stock:''};
+  const p = existing || {brand:'',name:'',category:'Téléphones',condition:'Neuf',color:'',storage:'',ram:'',imei:'',price:'',cost:'',stock:''};
+  const modelOptions = PHONE_MODELS[p.brand] || PHONE_MODELS["Autre"];
   return `
     <h3>${existing?'Modifier l\'article':'Ajouter un article'}</h3>
     <div class="field-row">
-      <div class="field"><label>Marque</label><input id="f-brand" value="${esc(p.brand)}"></div>
-      <div class="field"><label>Modèle</label><input id="f-name" value="${esc(p.name)}"></div>
+      ${selectWithOther('f-brand', 'Marque', PHONE_BRANDS, p.brand)}
+      <div class="field">
+        <label>Modèle</label>
+        <select id="f-model-select">
+          <option value="">—</option>
+          ${modelOptions.map(m=>`<option value="${esc(m)}" ${p.name===m?'selected':''}>${esc(m)}</option>`).join('')}
+        </select>
+        <input id="f-name" placeholder="Précisez le modèle" style="margin-top:8px;${(p.name && modelOptions.includes(p.name) && p.name!=='Autre')?'display:none;':''}" value="${esc(p.name)}">
+      </div>
     </div>
     <div class="field-row">
       <div class="field"><label>Catégorie</label><select id="f-category">${['Téléphones','Accessoires','Pièces de réparation','Occasion / Reprise'].map(c=>`<option ${p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>État</label><select id="f-condition">${['Neuf','Excellent','Bon','Moyen'].map(c=>`<option ${p.condition===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-row">
+      ${selectWithOther('f-color', 'Couleur', PHONE_COLORS, p.color)}
+      ${selectWithOther('f-storage', 'Capacité', PHONE_STORAGE, p.storage)}
+    </div>
+    <div class="field-row">
+      ${selectWithOther('f-ram', 'RAM', PHONE_RAM, p.ram)}
+      <div class="field"><label>IMEI (optionnel)</label><input id="f-imei" value="${esc(p.imei||'')}" placeholder="35 892 601 xxxxxx"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Prix de vente (${CURRENCY})</label><input id="f-price" type="number" value="${p.price}"></div>
@@ -400,17 +470,49 @@ function productForm(existing){
     <div class="field"><label>Quantité en stock</label><input id="f-stock" type="number" value="${p.stock}"></div>
     <div class="modal-actions"><button class="btn btn-ghost" id="modal-cancel">Annuler</button><button class="btn btn-primary" id="modal-save">${existing?'Enregistrer':'Ajouter'}</button></div>`;
 }
+function wireProductForm(existing){
+  wireSelectWithOther('f-brand');
+  wireSelectWithOther('f-color');
+  wireSelectWithOther('f-storage');
+  wireSelectWithOther('f-ram');
+  const brandSel = document.getElementById('f-brand');
+  const modelSel = document.getElementById('f-model-select');
+  const modelInput = document.getElementById('f-name');
+  function refreshModels(){
+    const brand = brandSel.value === 'Autre' ? (document.getElementById('f-brand-other').value.trim() || 'Autre') : brandSel.value;
+    const options = PHONE_MODELS[brand] || PHONE_MODELS["Autre"];
+    modelSel.innerHTML = '<option value="">—</option>' + options.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  }
+  brandSel.addEventListener('change', refreshModels);
+  modelSel.addEventListener('change', ()=>{
+    if(modelSel.value === 'Autre' || modelSel.value === ''){
+      modelInput.style.display = 'block';
+      if(modelSel.value === '') modelInput.value = '';
+    } else {
+      modelInput.style.display = 'none';
+      modelInput.value = modelSel.value;
+    }
+  });
+  // Pré-sélectionne le modèle existant s'il correspond à une valeur connue
+  if(existing && existing.name){
+    const opts = Array.from(modelSel.options).map(o=>o.value);
+    if(opts.includes(existing.name)) modelSel.value = existing.name;
+    else if(modelSel.querySelector('option[value="Autre"]')) modelSel.value = 'Autre';
+  }
+}
 function inventoryHandlers(){
   document.querySelectorAll('.filters .chip').forEach(el=> el.addEventListener('click', ()=>{ inventoryFilter = el.dataset.cat; renderScreen(); }));
   const addBtn = document.getElementById('add-product-btn');
   if(addBtn) addBtn.addEventListener('click', ()=>{
     openModal(productForm(null));
+    wireProductForm(null);
     document.getElementById('modal-cancel').addEventListener('click', closeModal);
     document.getElementById('modal-save').addEventListener('click', ()=>saveProduct(null));
   });
   document.querySelectorAll('[data-edit]').forEach(el=> el.addEventListener('click', ()=>{
     const p = state.products.find(x=>x.id===el.dataset.edit);
     openModal(productForm(p));
+    wireProductForm(p);
     document.getElementById('modal-cancel').addEventListener('click', closeModal);
     document.getElementById('modal-save').addEventListener('click', ()=>saveProduct(p.id));
   }));
@@ -422,10 +524,14 @@ function inventoryHandlers(){
 }
 async function saveProduct(existingId){
   const payload = {
-    brand: document.getElementById('f-brand').value.trim(),
+    brand: readSelectWithOther('f-brand'),
     name: document.getElementById('f-name').value.trim(),
     category: document.getElementById('f-category').value,
     condition: document.getElementById('f-condition').value,
+    color: readSelectWithOther('f-color'),
+    storage: readSelectWithOther('f-storage'),
+    ram: readSelectWithOther('f-ram'),
+    imei: document.getElementById('f-imei').value.trim(),
     price: Number(document.getElementById('f-price').value)||0,
     cost: Number(document.getElementById('f-cost').value)||0,
     stock: Number(document.getElementById('f-stock').value)||0
@@ -572,10 +678,24 @@ function renderTroc(){
       <div class="troc-layout">
         <div class="troc-panel in">
           <div class="tp-head"><div class="tp-icon">📥</div><div><h3>Appareil repris</h3><div class="tp-sub">L'appareil que le client apporte</div></div></div>
-          <div class="field-row"><div class="field"><label>Marque</label><input id="t-inbrand"></div><div class="field"><label>Modèle</label><input id="t-inmodel"></div></div>
+          <div class="field-row">
+            ${selectWithOther('t-inbrand', 'Marque', PHONE_BRANDS, '')}
+            <div class="field">
+              <label>Modèle</label>
+              <select id="t-inmodel-select"><option value="">—</option>${(PHONE_MODELS["Autre"]).map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>
+              <input id="t-inmodel" placeholder="Précisez le modèle" style="margin-top:8px;">
+            </div>
+          </div>
+          <div class="field-row">
+            ${selectWithOther('t-incolor', 'Couleur', PHONE_COLORS, '')}
+            ${selectWithOther('t-instorage', 'Capacité', PHONE_STORAGE, '')}
+          </div>
+          <div class="field-row">
+            ${selectWithOther('t-inram', 'RAM', PHONE_RAM, '')}
+            <div class="field"><label>IMEI (optionnel)</label><input id="t-imei" placeholder="35 892 601 xxxxxx"></div>
+          </div>
           <div class="field"><label>État de l'appareil</label><div class="cond-chips" id="t-cond">${['Excellent','Bon','Moyen','Mauvais'].map(c=>`<div class="cond-chip ${selectedTrocCondition===c?'sel':''}" data-cond="${c}">${c}</div>`).join('')}</div></div>
-          <div class="field-row"><div class="field"><label>IMEI (optionnel)</label><input id="t-imei"></div><div class="field"><label>Valeur de reprise (${CURRENCY})</label><input id="t-invalue" type="number"></div></div>
-          <div class="field"><label>Client</label><input id="t-client"></div>
+          <div class="field-row"><div class="field"><label>Valeur de reprise (${CURRENCY})</label><input id="t-invalue" type="number"></div><div class="field"><label>Client</label><input id="t-client"></div></div>
         </div>
         <div class="troc-panel out">
           <div class="tp-head"><div class="tp-icon">📤</div><div><h3>Nouvel appareil</h3><div class="tp-sub">L'appareil que le client repart avec</div></div></div>
@@ -598,6 +718,25 @@ function renderTroc(){
 function trocHandlers(){
   let trocPay = 'Espèces';
   document.querySelectorAll('#t-cond .cond-chip').forEach(el=> el.addEventListener('click', ()=>{ selectedTrocCondition = el.dataset.cond; renderScreen(); }));
+
+  wireSelectWithOther('t-inbrand');
+  wireSelectWithOther('t-incolor');
+  wireSelectWithOther('t-instorage');
+  wireSelectWithOther('t-inram');
+  const inBrandSel = document.getElementById('t-inbrand');
+  const inModelSel = document.getElementById('t-inmodel-select');
+  const inModelInput = document.getElementById('t-inmodel');
+  function refreshInModels(){
+    const brand = inBrandSel.value === 'Autre' ? (document.getElementById('t-inbrand-other').value.trim() || 'Autre') : inBrandSel.value;
+    const options = PHONE_MODELS[brand] || PHONE_MODELS["Autre"];
+    inModelSel.innerHTML = '<option value="">—</option>' + options.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  }
+  inBrandSel.addEventListener('change', refreshInModels);
+  inModelSel.addEventListener('change', ()=>{
+    if(inModelSel.value === 'Autre' || inModelSel.value === ''){ inModelInput.style.display = 'block'; if(inModelSel.value==='') inModelInput.value=''; }
+    else { inModelInput.style.display = 'none'; inModelInput.value = inModelSel.value; }
+  });
+
   const outSel = document.getElementById('t-outproduct');
   const outPrice = document.getElementById('t-outprice');
   function recalc(){
@@ -620,8 +759,11 @@ function trocHandlers(){
   }));
   document.getElementById('troc-validate').addEventListener('click', async ()=>{
     const payload = {
-      deviceInBrand: document.getElementById('t-inbrand').value.trim(),
+      deviceInBrand: readSelectWithOther('t-inbrand'),
       deviceInModel: document.getElementById('t-inmodel').value.trim(),
+      deviceInColor: readSelectWithOther('t-incolor'),
+      deviceInStorage: readSelectWithOther('t-instorage'),
+      deviceInRam: readSelectWithOther('t-inram'),
       imei: document.getElementById('t-imei').value.trim(),
       valueIn: Number(document.getElementById('t-invalue').value)||0,
       clientName: document.getElementById('t-client').value.trim(),

@@ -18,6 +18,20 @@ app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false })); // CSP à affiner selon votre nom de domaine en prod
 app.use(express.json({ limit: "1mb" }));
 
+// N'active le CORS que si le frontend est hébergé sur un domaine séparé
+// (ex. frontend sur Vercel, API sur Railway). Laisse ALLOWED_ORIGIN vide
+// dans .env si frontend et backend sont servis ensemble (Option A du README).
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN;
+if (ALLOWED_ORIGIN) {
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* Auth                                                                 */
 /* ------------------------------------------------------------------ */
@@ -132,7 +146,7 @@ app.delete("/api/users/:username", requireAuth, requireOwner, async (req, res) =
 app.get("/api/products", requireAuth, (req, res) => res.json(db.all("products")));
 
 app.post("/api/products", requireAuth, async (req, res) => {
-  const { brand, name, category, condition, price, cost, stock } = req.body || {};
+  const { brand, name, category, condition, color, storage, ram, imei, price, cost, stock } = req.body || {};
   if (!name || !(price > 0)) {
     return res.status(400).json({ error: "Le modèle et un prix valide sont requis." });
   }
@@ -141,6 +155,10 @@ app.post("/api/products", requireAuth, async (req, res) => {
     name,
     category: category || "Téléphones",
     condition: condition || "Neuf",
+    color: color || "",
+    storage: storage || "",
+    ram: ram || "",
+    imei: imei || "",
     price: Number(price) || 0,
     cost: Number(cost) || 0,
     stock: Number(stock) || 0
@@ -281,8 +299,10 @@ app.patch("/api/repairs/:id", requireAuth, async (req, res) => {
 app.get("/api/trocs", requireAuth, (req, res) => res.json(db.all("trocs")));
 
 app.post("/api/trocs", requireAuth, async (req, res) => {
-  const { deviceInBrand, deviceInModel, imei, valueIn, clientName, outProductId, outPrice, note, paymentMethod } =
-    req.body || {};
+  const {
+    deviceInBrand, deviceInModel, deviceInColor, deviceInStorage, deviceInRam,
+    imei, valueIn, clientName, outProductId, outPrice, note, paymentMethod
+  } = req.body || {};
   const outProduct = db.findById("products", outProductId);
   if (!deviceInModel || !outProduct || !(outPrice > 0)) {
     return res.status(400).json({ error: "Informations d'échange incomplètes." });
@@ -299,6 +319,10 @@ app.post("/api/trocs", requireAuth, async (req, res) => {
     name: `${deviceInModel} (reprise)`,
     category: "Occasion / Reprise",
     condition: req.body.condition || "Bon",
+    color: deviceInColor || "",
+    storage: deviceInStorage || "",
+    ram: deviceInRam || "",
+    imei: imei || "",
     price: Math.round(inValue * 1.15) || inValue,
     cost: inValue,
     stock: 1
@@ -308,6 +332,9 @@ app.post("/api/trocs", requireAuth, async (req, res) => {
     clientName: clientName || "",
     imei: imei || "",
     deviceIn: `${deviceInBrand || ""} ${deviceInModel}`.trim(),
+    deviceInColor: deviceInColor || "",
+    deviceInStorage: deviceInStorage || "",
+    deviceInRam: deviceInRam || "",
     valueIn: inValue,
     deviceOut: outProduct.name,
     valueOut: Number(outPrice),
