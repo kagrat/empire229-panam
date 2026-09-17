@@ -53,11 +53,17 @@ async function api(method, path, body){
     ),
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
+  const data = res.status === 204 ? null : await res.json().catch(()=>null);
   if(res.status === 401){
+    // Sur la tentative de connexion elle-même, un 401 veut dire
+    // "identifiant/mot de passe incorrect" — pas une session expirée
+    // (il n'y a pas encore de session). On garde le vrai message serveur.
+    if(path === "/auth/login"){
+      throw new Error((data && data.error) || "Identifiant ou mot de passe incorrect.");
+    }
     logout();
     throw new Error("Session expirée");
   }
-  const data = res.status === 204 ? null : await res.json().catch(()=>null);
   if(!res.ok){
     throw new Error((data && data.error) || "Erreur serveur");
   }
