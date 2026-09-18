@@ -215,7 +215,7 @@ app.patch("/api/clients/:id", requireAuth, async (req, res) => {
 app.get("/api/sales", requireAuth, (req, res) => res.json(db.all("sales")));
 
 app.post("/api/sales", requireAuth, async (req, res) => {
-  const { items, paymentMethod, clientId, manualClientName, mobileMoneyRef } = req.body || {};
+  const { items, paymentMethod, clientId, manualClientName, manualClientPhone, mobileMoneyRef } = req.body || {};
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Le panier est vide." });
   }
@@ -253,8 +253,11 @@ app.post("/api/sales", requireAuth, async (req, res) => {
     await db.update("products", product.id, { stock: product.stock - line.qty });
   }
 
-  let clientName = (manualClientName && manualClientName.trim()) || "Client de passage";
+  let clientName = "Client de passage";
+  let finalClientId = clientId || null;
+
   if (clientId) {
+    // Client déjà enregistré, sélectionné dans la liste.
     const client = db.findById("clients", clientId);
     if (client) {
       clientName = client.name;
@@ -263,6 +266,18 @@ app.post("/api/sales", requireAuth, async (req, res) => {
         lastPurchase: new Date().toISOString()
       });
     }
+  } else if (manualClientName && manualClientName.trim()) {
+    // Nom saisi à la volée pour un client de passage : on l'enregistre
+    // automatiquement comme une vraie fiche client pour la prochaine fois.
+    const newClient = await db.insert("clients", {
+      name: manualClientName.trim(),
+      phone: (manualClientPhone || "").trim(),
+      notes: "",
+      totalSpent: total,
+      lastPurchase: new Date().toISOString()
+    });
+    finalClientId = newClient.id;
+    clientName = newClient.name;
   }
 
   const sale = await db.insert("sales", {
@@ -271,7 +286,7 @@ app.post("/api/sales", requireAuth, async (req, res) => {
     total,
     paymentMethod: paymentMethod || "Espèces",
     mobileMoneyRef: paymentMethod === "Mobile Money" ? mobileMoneyRef : "",
-    clientId: clientId || null,
+    clientId: finalClientId,
     clientName,
     soldBy: req.user.name
   });

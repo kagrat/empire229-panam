@@ -25,6 +25,7 @@ let cart = [];
 let selectedPaymentMethod = "Espèces";
 let selectedClientForSale = "";
 let manualClientName = "";
+let manualClientPhone = "";
 let mobileMoneyRef = "";
 let posFilter = "Tous";
 let inventoryFilter = "Tous";
@@ -331,31 +332,13 @@ function renderPOS(){
   const filtered = state.products.filter(p=> posFilter==='Tous' || p.category===posFilter);
   const total = cart.reduce((a,c)=>a+c.price*c.qty,0);
   const availableForSelect = state.products.filter(p=>p.stock>0);
+  const selectedClient = state.clients.find(c=>c.id===selectedClientForSale);
   return `
   <div class="screen active">
     <div class="topbar"><div><h1>Point de vente</h1><div class="stamp">${esc(currentUser.name)} · ${esc(state.settings.location||'')}</div></div></div>
     <div style="padding:30px 34px 60px 34px;">
       <div class="pos-layout">
         <div>
-          <div class="panel card-pad" style="margin-bottom:18px;">
-            <div class="card-head"><h3>Ajouter un article</h3></div>
-            <div class="field-row" style="align-items:end;">
-              <div class="field" style="margin-bottom:0;">
-                <label>Article (depuis l'inventaire)</label>
-                <select id="pos-add-select">
-                  <option value="">— Choisir un article —</option>
-                  ${availableForSelect.map(p=>`<option value="${p.id}">${esc(p.brand?p.brand+' — ':'')}${esc(p.name)} — ${fmt(p.price)} (${p.stock} en stock)</option>`).join('')}
-                </select>
-              </div>
-              <div class="field" style="margin-bottom:0;max-width:110px;">
-                <label>Quantité</label>
-                <input id="pos-add-qty" type="number" min="1" value="1">
-              </div>
-              <div class="field" style="margin-bottom:0;">
-                <button class="btn btn-primary" id="pos-add-btn" style="width:100%;justify-content:center;">+ Ajouter au panier</button>
-              </div>
-            </div>
-          </div>
           <div class="filters" id="pos-filters">${cats.map(c=>`<div class="chip ${c===posFilter?'active':''}" data-cat="${esc(c)}">${esc(c)}</div>`).join('')}</div>
           <div class="pos-grid" id="pos-grid">
             ${filtered.length ? filtered.map(p=>`
@@ -367,18 +350,46 @@ function renderPOS(){
         </div>
         <div class="cart-panel">
           <h3>Vente en cours</h3>
-          <div id="cart-lines">
-            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Choisissez un article ci-contre pour l\'ajouter</div>'}
+
+          <div class="field-row">
+            <div class="field" style="margin-bottom:10px;">
+              <label style="color:var(--ink-400);">Client existant</label>
+              <select class="cart-select" id="cart-client" style="margin-top:0;">
+                <option value="">— Nouveau / client de passage —</option>
+                ${state.clients.map(c=>`<option value="${c.id}" ${selectedClientForSale===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+              </select>
+            </div>
           </div>
-          <select class="cart-select" id="cart-client">
-            <option value="">Client de passage (saisir un nom)</option>
-            ${state.clients.map(c=>`<option value="${c.id}" ${selectedClientForSale===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
-          </select>
-          <input class="cart-select" id="cart-client-name" placeholder="Nom du client (optionnel)" value="${esc(manualClientName)}" style="${selectedClientForSale?'display:none;':''}">
+          <div class="field-row">
+            <div class="field" style="margin-bottom:10px;">
+              <label style="color:var(--ink-400);">Nom du client</label>
+              <input class="cart-select" id="cart-client-name" placeholder="Nom" style="margin-top:0;" value="${esc(selectedClient?selectedClient.name:manualClientName)}" ${selectedClientForSale?'disabled':''}>
+            </div>
+            <div class="field" style="margin-bottom:10px;">
+              <label style="color:var(--ink-400);">Téléphone</label>
+              <input class="cart-select" id="cart-client-phone" placeholder="Numéro" style="margin-top:0;" value="${esc(selectedClient?(selectedClient.phone||''):manualClientPhone)}" ${selectedClientForSale?'disabled':''}>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--navy-line);margin:16px 0;padding-top:16px;">
+            <label style="color:var(--ink-400);font-size:11.5px;font-weight:600;">Ajouter un article</label>
+            <select class="cart-select" id="pos-add-select" style="margin-top:6px;">
+              <option value="">— Choisir un article de l'inventaire —</option>
+              ${availableForSelect.map(p=>`<option value="${p.id}">${esc(p.brand?p.brand+' — ':'')}${esc(p.name)} — ${fmt(p.price)} (${p.stock} en stock)</option>`).join('')}
+            </select>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <input id="pos-add-qty" type="number" min="1" value="1" style="width:70px;padding:9px;border-radius:8px;border:1px solid var(--navy-line);background:var(--navy-800);color:var(--ivory-50);font-size:12.5px;">
+              <button class="btn btn-gold" id="pos-add-btn" style="flex:1;justify-content:center;">+ Ajouter</button>
+            </div>
+          </div>
+
+          <div id="cart-lines" style="margin-top:6px;">
+            ${cart.length ? cart.map((c,i)=>`<div class="cart-line"><div><div class="cl-name">${esc(c.name)}</div><div class="cl-meta">Qté ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px;">${fmt(c.price*c.qty)}<button class="cl-rm" data-i="${i}">×</button></div></div>`).join('') : '<div class="cart-empty">Aucun article ajouté pour l\'instant</div>'}
+          </div>
           <div class="cart-total"><span class="lbl">Total</span><span>${fmt(total)}</span></div>
           <div class="pay-methods" id="pay-methods">${['Espèces','Mobile Money','Crédit'].map(m=>`<div class="pm ${selectedPaymentMethod===m?'sel':''}" data-pm="${m}">${m}</div>`).join('')}</div>
           <input class="cart-select" id="cart-momo-ref" placeholder="Référence de la transaction Mobile Money" value="${esc(mobileMoneyRef)}" style="${selectedPaymentMethod==='Mobile Money'?'':'display:none;'}margin-top:10px;">
-          <button class="btn btn-gold cart-cta" id="checkout-btn" ${!cart.length?'disabled':''}>Encaisser</button>
+          <button class="btn btn-gold cart-cta" id="checkout-btn" ${!cart.length?'disabled':''}>Encaisser et générer la facture</button>
         </div>
       </div>
     </div>
@@ -408,6 +419,8 @@ function posHandlers(){
   if(clientSel) clientSel.addEventListener('change', e=>{ selectedClientForSale = e.target.value; renderScreen(); });
   const clientNameInput = document.getElementById('cart-client-name');
   if(clientNameInput) clientNameInput.addEventListener('input', e=>{ manualClientName = e.target.value; });
+  const clientPhoneInput = document.getElementById('cart-client-phone');
+  if(clientPhoneInput) clientPhoneInput.addEventListener('input', e=>{ manualClientPhone = e.target.value; });
   const momoInput = document.getElementById('cart-momo-ref');
   if(momoInput) momoInput.addEventListener('input', e=>{ mobileMoneyRef = e.target.value; });
   const checkoutBtn = document.getElementById('checkout-btn');
@@ -434,10 +447,11 @@ async function checkout(){
       paymentMethod: selectedPaymentMethod,
       clientId: selectedClientForSale || null,
       manualClientName: manualClientName,
+      manualClientPhone: manualClientPhone,
       mobileMoneyRef: mobileMoneyRef
     });
     cart = []; selectedClientForSale = ''; selectedPaymentMethod = 'Espèces';
-    manualClientName = ''; mobileMoneyRef = '';
+    manualClientName = ''; manualClientPhone = ''; mobileMoneyRef = '';
     toast('Vente encaissée : ' + fmt(sale.total));
     await refreshAll();
     openReceipt(sale);
