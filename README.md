@@ -93,17 +93,16 @@ HTTPS, le mot de passe et le jeton de connexion circulent en clair.
 
 ---
 
-## 3. Déployer avec Docker
+## 3. Déployer avec Docker (optionnel, non fourni par défaut)
 
-```bash
-cd server
-cp .env.example .env
-nano .env
-docker compose up -d --build
-```
+Ce projet ne contient volontairement plus de `Dockerfile` ni de
+`docker-compose.yml` par défaut : leur présence dans le dépôt entrait en
+conflit avec la détection automatique de Railway (qui tentait de les
+utiliser au lieu de son détecteur Nixpacks, causant des échecs de build).
 
-L'application écoute sur le port 3000 du serveur ; mettez un reverse proxy
-(Nginx, Caddy, Traefik) devant pour le HTTPS, comme ci-dessus.
+Si vous voulez déployer via Docker sur un autre hébergeur, demandez ces
+deux fichiers séparément plutôt que de les remettre dans un dépôt connecté
+à Railway.
 
 ---
 
