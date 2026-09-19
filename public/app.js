@@ -17,7 +17,7 @@ let currentUser = null;
 let currentScreen = "dashboard";
 
 const state = {
-  users: [], products: [], sales: [], clients: [], repairs: [],
+  users: [], products: [], sales: [], clients: [], repairs: [], claims: [],
   trocs: [], suppliers: [], expenses: [], settings: { shopName: "", location: "", lowStockThreshold: 5 }
 };
 
@@ -28,8 +28,10 @@ let manualClientName = "";
 let manualClientPhone = "";
 let mobileMoneyRef = "";
 let posFilter = "Tous";
+let posAddSelectedId = "";
+let posAddSelectedLabel = "";
 let inventoryFilter = "Tous";
-let selectedTrocCondition = "Bon";
+let selectedTrocCondition = "Occasion";
 
 /* ---------------- listes de référence (marques, modèles, couleurs, capacités) ---------------- */
 const PHONE_BRANDS = ["Samsung","Apple","Tecno","Infinix","Itel","Xiaomi","Oppo","Vivo","Realme","Nokia","Huawei","Autre"];
@@ -50,6 +52,7 @@ const PHONE_MODELS = {
 const PHONE_COLORS = ["Noir","Blanc","Bleu","Vert","Or","Argent","Gris sidéral","Rouge","Violet","Rose","Autre"];
 const PHONE_STORAGE = ["16 Go","32 Go","64 Go","128 Go","256 Go","512 Go","1 To","Autre"];
 const PHONE_RAM = ["1 Go","2 Go","3 Go","4 Go","6 Go","8 Go","12 Go","16 Go","Autre"];
+const PHONE_CONDITIONS = ["Scellé","Venu","Occasion"];
 
 /** Génère le HTML d'un champ select + champ texte "Autre" caché, réutilisé
  * pour marque, modèle, couleur, capacité et RAM. */
@@ -190,7 +193,7 @@ async function refreshAll(){
   try{
     const calls = [
       ['products', '/products'], ['sales', '/sales'], ['clients', '/clients'],
-      ['repairs', '/repairs'], ['trocs', '/trocs'], ['suppliers', '/suppliers'],
+      ['repairs', '/repairs'], ['claims', '/claims'], ['trocs', '/trocs'], ['suppliers', '/suppliers'],
       ['expenses', '/expenses'], ['settings', '/settings']
     ];
     if(isOwner()) calls.push(['users', '/users']);
@@ -207,6 +210,7 @@ const NAV_ITEMS = [
   {id:'inventory', label:'Inventaire', ownerOnly:false, icon:'<rect x="4" y="7" width="16" height="13" rx="1.5"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'},
   {id:'clients', label:'Clients', ownerOnly:false, icon:'<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6"/>'},
   {id:'repairs', label:'Réparations', ownerOnly:false, icon:'<path d="M14 3l7 7-8.5 8.5-4-4L3 20l1-6L12.5 5.5z"/>'},
+  {id:'claims', label:'Réclamations', ownerOnly:false, icon:'<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>'},
   {id:'troc', label:'Échange / Troc', ownerOnly:false, icon:'<path d="M17 3l4 4-4 4"/><path d="M21 7H9a5 5 0 0 0-5 5"/><path d="M7 21l-4-4 4-4"/><path d="M3 17h12a5 5 0 0 0 5-5"/>'},
   {id:'suppliers', label:'Fournisseurs', ownerOnly:false, icon:'<rect x="3" y="10" width="18" height="9" rx="1.5"/><path d="M7 10V7a5 5 0 0 1 10 0v3"/>'},
   {id:'expenses', label:'Dépenses', ownerOnly:false, icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.3 3-2.3s3 .9 3 2.1c0 3-6 1.4-6 4.3 0 1.3 1.3 2.2 3 2.2s3-.9 3-2.2"/>'},
@@ -249,7 +253,7 @@ function renderScreen(){
   const main = document.getElementById('main-area');
   const renderers = {
     dashboard: renderDashboard, pos: renderPOS, inventory: renderInventory, clients: renderClients,
-    repairs: renderRepairs, troc: renderTroc, suppliers: renderSuppliers, expenses: renderExpenses,
+    repairs: renderRepairs, claims: renderClaims, troc: renderTroc, suppliers: renderSuppliers, expenses: renderExpenses,
     reports: renderReports, employees: renderEmployees, settings: renderSettings
   };
   const fn = renderers[currentScreen];
@@ -373,10 +377,10 @@ function renderPOS(){
 
           <div style="border-top:1px solid var(--navy-line);margin:16px 0;padding-top:16px;">
             <label style="color:var(--ink-400);font-size:11.5px;font-weight:600;">Ajouter un article</label>
-            <select class="cart-select" id="pos-add-select" style="margin-top:6px;">
-              <option value="">— Choisir un article de l'inventaire —</option>
-              ${availableForSelect.map(p=>`<option value="${p.id}">${esc(p.brand?p.brand+' — ':'')}${esc(p.name)} — ${fmt(p.price)} (${p.stock} en stock)</option>`).join('')}
-            </select>
+            <div style="position:relative;margin-top:6px;">
+              <input id="pos-add-search" placeholder="Rechercher un article (nom, marque)…" autocomplete="off" value="${esc(posAddSelectedLabel)}">
+              <div id="pos-add-results" class="search-results"></div>
+            </div>
             <div style="display:flex;gap:8px;margin-top:8px;">
               <input id="pos-add-qty" type="number" min="1" value="1" style="width:70px;padding:9px;border-radius:8px;border:1px solid var(--navy-line);background:var(--navy-800);color:var(--ivory-50);font-size:12.5px;">
               <button class="btn btn-gold" id="pos-add-btn" style="flex:1;justify-content:center;">+ Ajouter</button>
@@ -404,13 +408,46 @@ function posHandlers(){
       addToCart(p, 1);
     });
   });
-  const addSelect = document.getElementById('pos-add-select');
+  const addSearch = document.getElementById('pos-add-search');
+  const addResults = document.getElementById('pos-add-results');
   const addQty = document.getElementById('pos-add-qty');
   const addBtn = document.getElementById('pos-add-btn');
+  function renderAddResults(query){
+    if(!addResults) return;
+    const q = query.trim().toLowerCase();
+    if(!q){ addResults.innerHTML = ''; addResults.classList.remove('open'); return; }
+    const matches = state.products.filter(p=> p.stock>0 && ((p.brand||'')+' '+p.name).toLowerCase().includes(q)).slice(0,20);
+    addResults.innerHTML = matches.length ? matches.map(p=>`
+      <div class="search-result-item" data-id="${p.id}" data-label="${esc((p.brand?p.brand+' ':'')+p.name)}">
+        <span class="sr-name">${esc(p.brand?p.brand+' ':'')}${esc(p.name)}</span>
+        <span class="sr-meta">${fmt(p.price)} · ${p.stock} en stock</span>
+      </div>`).join('') : '<div class="search-result-empty">Aucun article trouvé (ou en rupture de stock)</div>';
+    addResults.classList.add('open');
+    addResults.querySelectorAll('.search-result-item').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        posAddSelectedId = el.dataset.id;
+        posAddSelectedLabel = el.dataset.label;
+        addSearch.value = posAddSelectedLabel;
+        addResults.innerHTML = ''; addResults.classList.remove('open');
+        addQty.focus();
+      });
+    });
+  }
+  if(addSearch){
+    addSearch.addEventListener('input', e=>{
+      posAddSelectedId = ''; // toute frappe invalide la sélection précédente
+      renderAddResults(e.target.value);
+    });
+    addSearch.addEventListener('focus', e=>{ if(e.target.value && !posAddSelectedId) renderAddResults(e.target.value); });
+    document.addEventListener('click', e=>{
+      if(addResults && !addResults.contains(e.target) && e.target!==addSearch){ addResults.innerHTML=''; addResults.classList.remove('open'); }
+    });
+  }
   if(addBtn) addBtn.addEventListener('click', ()=>{
-    const p = state.products.find(x=>x.id===addSelect.value);
+    const p = state.products.find(x=>x.id===posAddSelectedId);
     const qty = Math.max(1, Number(addQty.value)||1);
-    if(!p){ toast('Choisissez un article dans la liste', true); return; }
+    if(!p){ toast('Choisissez un article dans les résultats de recherche', true); return; }
+    posAddSelectedId = ''; posAddSelectedLabel = '';
     addToCart(p, qty);
   });
   document.querySelectorAll('.cl-rm').forEach(el=> el.addEventListener('click', ()=>{ cart.splice(Number(el.dataset.i),1); renderScreen(); }));
@@ -498,7 +535,7 @@ function renderInventory(){
   </div>`;
 }
 function productForm(existing){
-  const p = existing || {brand:'',name:'',category:'Téléphones',condition:'Neuf',color:'',storage:'',ram:'',imei:'',price:'',cost:'',stock:''};
+  const p = existing || {brand:'',name:'',category:'Téléphones',condition:'Scellé',color:'',storage:'',ram:'',imei:'',price:'',cost:'',stock:1};
   const modelOptions = PHONE_MODELS[p.brand] || PHONE_MODELS["Autre"];
   return `
     <h3>${existing?'Modifier l\'article':'Ajouter un article'}</h3>
@@ -515,7 +552,7 @@ function productForm(existing){
     </div>
     <div class="field-row">
       <div class="field"><label>Catégorie</label><select id="f-category">${['Téléphones','Accessoires','Pièces de réparation','Occasion / Reprise'].map(c=>`<option ${p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
-      <div class="field"><label>État</label><select id="f-condition">${['Neuf','Excellent','Bon','Moyen'].map(c=>`<option ${p.condition===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>État</label><select id="f-condition">${PHONE_CONDITIONS.map(c=>`<option ${p.condition===c?'selected':''}>${c}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
       ${selectWithOther('f-color', 'Couleur', PHONE_COLORS, p.color)}
@@ -730,6 +767,309 @@ function repairsHandlers(){
 }
 
 /* ======================================================================
+   RÉCLAMATIONS (SAV — retour après-vente, avec remplacement possible)
+   ====================================================================== */
+const CLAIM_STATUS_LABELS = {
+  ouverte: ['warn','Ouverte'],
+  en_cours: ['warn','En cours de traitement'],
+  resolue: ['ok','Résolue'],
+  refusee: ['bad','Rejetée']
+};
+function claimStatusPill(status){
+  const [cls,label] = CLAIM_STATUS_LABELS[status] || ['warn', status];
+  return `<span class="pill ${cls}"><span class="pill-dot"></span>${label}</span>`;
+}
+const RESOLUTION_LABELS = {
+  remplacement: 'Remplacement',
+  reparation: 'Réparation',
+  remboursement: 'Remboursement',
+  rejet: 'Rejet (hors garantie)'
+};
+
+function renderClaims(){
+  const claims = [...state.claims].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const open = state.claims.filter(c=>c.status==='ouverte'||c.status==='en_cours');
+  return `
+  <div class="screen active">
+    <div class="topbar">
+      <div><h1>Réclamations</h1><div class="stamp">${state.claims.length} dossier(s) · ${open.length} en cours de traitement</div></div>
+      <div class="top-actions"><button class="btn btn-primary" id="add-claim-btn">+ Nouvelle réclamation</button></div>
+    </div>
+    <div style="padding:30px 34px 60px 34px;">
+      <div class="panel card-pad">
+        <div class="table-wrap"><table>
+          <thead><tr><th>N° Ticket</th><th>Date</th><th>Client</th><th>Appareil</th><th>Problème</th><th>Résolution</th><th>Statut</th><th></th></tr></thead>
+          <tbody>
+          ${claims.length ? claims.map(c=>`
+            <tr>
+              <td>CLM-${(c.id||'').slice(0,6).toUpperCase()}</td>
+              <td>${c.date?new Date(c.date).toLocaleDateString('fr-FR'):''}</td>
+              <td>${esc(c.clientName)}</td>
+              <td>${esc((c.device&&c.device.brand)?c.device.brand+' ':'')}${esc(c.device?c.device.model:'')}</td>
+              <td>${esc((c.issue||'').slice(0,40))}${(c.issue||'').length>40?'…':''}</td>
+              <td>${esc(RESOLUTION_LABELS[c.resolutionType]||c.resolutionType)}</td>
+              <td>
+                <select data-claim="${c.id}">
+                  <option value="ouverte" ${c.status==='ouverte'?'selected':''}>Ouverte</option>
+                  <option value="en_cours" ${c.status==='en_cours'?'selected':''}>En cours</option>
+                  <option value="resolue" ${c.status==='resolue'?'selected':''}>Résolue</option>
+                  <option value="refusee" ${c.status==='refusee'?'selected':''}>Rejetée</option>
+                </select>
+              </td>
+              <td><button class="btn btn-ghost btn-sm" data-claimdoc="${c.id}">Fiche</button></td>
+            </tr>`).join('') : '<tr><td colspan="8" class="empty-state">Aucune réclamation enregistrée</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function claimForm(){
+  const availableForReplacement = state.products.filter(p=>p.stock>0);
+  return `
+    <h3>Nouvelle réclamation</h3>
+    <div class="modal-sub">Procédure de service après-vente : vérifiez la vente d'origine, décrivez le problème constaté, puis choisissez la résolution à apporter.</div>
+
+    <p style="font-size:11.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.4px;margin:0 0 8px 0;">Client</p>
+    <div class="field-row">
+      <div class="field"><label>Nom du client</label><input id="c-name" placeholder="Nom complet"></div>
+      <div class="field"><label>Téléphone</label><input id="c-phone" placeholder="Numéro"></div>
+    </div>
+    <div class="field"><label>Référence de la vente d'origine (n° de reçu ou date d'achat)</label><input id="c-saleref" placeholder="ex. REC-A1B2C3D4 ou 12/09/2026"></div>
+
+    <p style="font-size:11.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.4px;margin:18px 0 8px 0;">Appareil concerné</p>
+    <div class="field-row">
+      ${selectWithOther('c-brand', 'Marque', PHONE_BRANDS, '')}
+      <div class="field">
+        <label>Modèle</label>
+        <select id="c-model-select"><option value="">—</option>${(PHONE_MODELS["Autre"]).map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>
+        <input id="c-model" placeholder="Précisez le modèle" style="margin-top:8px;">
+      </div>
+    </div>
+    <div class="field"><label>IMEI (recommandé pour vérification de garantie)</label><input id="c-imei" placeholder="35 892 601 xxxxxx"></div>
+    <div class="field"><label>Problème constaté</label><textarea id="c-issue" placeholder="ex. Écran qui scintille depuis 3 jours, batterie qui se décharge très vite…"></textarea></div>
+
+    <p style="font-size:11.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.4px;margin:18px 0 8px 0;">Résolution</p>
+    <div class="cond-chips" id="c-resolution">
+      ${Object.entries(RESOLUTION_LABELS).map(([k,label])=>`<div class="cond-chip ${k==='remplacement'?'sel':''}" data-res="${k}">${label}</div>`).join('')}
+    </div>
+
+    <div id="c-replacement-block" style="margin-top:14px;">
+      <div class="field"><label>Article de remplacement remis au client</label>
+        <select id="c-replacement-select">
+          <option value="">— Choisir un article en stock —</option>
+          ${availableForReplacement.map(p=>`<option value="${p.id}" data-price="${p.price}">${esc(p.brand?p.brand+' ':'')}${esc(p.name)} — ${fmt(p.price)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Complément à payer par le client (optionnel, si l'appareil de remplacement est plus cher)</label><input id="c-complement" type="number" value="0"></div>
+    </div>
+    <div id="c-rejet-block" style="display:none;margin-top:14px;">
+      <div class="field"><label>Motif du rejet</label><textarea id="c-rejet-motif" placeholder="ex. Panne due à un choc / dommage liquide, hors garantie"></textarea></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Annuler</button>
+      <button class="btn btn-primary" id="modal-save">Enregistrer la réclamation</button>
+    </div>`;
+}
+
+function claimsHandlers(){
+  const addBtn = document.getElementById('add-claim-btn');
+  if(addBtn) addBtn.addEventListener('click', ()=>{
+    openModal(claimForm());
+    wireClaimForm();
+    document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal-save').addEventListener('click', saveClaim);
+  });
+  document.querySelectorAll('[data-claim]').forEach(el=> el.addEventListener('change', async ()=>{
+    try{ await api('PATCH', '/claims/'+el.dataset.claim, {status: el.value}); await refreshAll(); }
+    catch(e){ toast(e.message, true); }
+  }));
+  document.querySelectorAll('[data-claimdoc]').forEach(el=> el.addEventListener('click', ()=>{
+    const c = state.claims.find(x=>x.id===el.dataset.claimdoc);
+    if(c) openClaimDoc(c);
+  }));
+}
+
+function wireClaimForm(){
+  wireSelectWithOther('c-brand');
+  const brandSel = document.getElementById('c-brand');
+  const modelSel = document.getElementById('c-model-select');
+  const modelInput = document.getElementById('c-model');
+  function refreshModels(){
+    const brand = brandSel.value === 'Autre' ? (document.getElementById('c-brand-other').value.trim() || 'Autre') : brandSel.value;
+    const options = PHONE_MODELS[brand] || PHONE_MODELS["Autre"];
+    modelSel.innerHTML = '<option value="">—</option>' + options.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  }
+  brandSel.addEventListener('change', refreshModels);
+  modelSel.addEventListener('change', ()=>{
+    if(modelSel.value === 'Autre' || modelSel.value === ''){ modelInput.style.display = 'block'; if(modelSel.value==='') modelInput.value=''; }
+    else { modelInput.style.display = 'none'; modelInput.value = modelSel.value; }
+  });
+
+  let resolutionType = 'remplacement';
+  const replacementBlock = document.getElementById('c-replacement-block');
+  const rejetBlock = document.getElementById('c-rejet-block');
+  document.querySelectorAll('#c-resolution .cond-chip').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      document.querySelectorAll('#c-resolution .cond-chip').forEach(x=>x.classList.remove('sel'));
+      el.classList.add('sel');
+      resolutionType = el.dataset.res;
+      replacementBlock.style.display = resolutionType==='remplacement' ? 'block' : 'none';
+      rejetBlock.style.display = resolutionType==='rejet' ? 'block' : 'none';
+    });
+  });
+  const replSelect = document.getElementById('c-replacement-select');
+  const complementInput = document.getElementById('c-complement');
+  replSelect.addEventListener('change', ()=>{
+    const opt = replSelect.selectedOptions[0];
+    complementInput.value = 0; // le complément reste à l'appréciation du vendeur, non pré-rempli
+  });
+  window.__getClaimResolution = () => resolutionType;
+}
+
+async function saveClaim(){
+  const resolutionType = window.__getClaimResolution ? window.__getClaimResolution() : 'remplacement';
+  const clientName = document.getElementById('c-name').value.trim();
+  const clientPhone = document.getElementById('c-phone').value.trim();
+  const saleRef = document.getElementById('c-saleref').value.trim();
+  const deviceBrand = readSelectWithOther('c-brand');
+  const deviceModel = document.getElementById('c-model').value.trim();
+  const deviceImei = document.getElementById('c-imei').value.trim();
+  const issue = document.getElementById('c-issue').value.trim();
+
+  if(!clientName || !deviceModel || !issue){
+    toast('Nom du client, appareil concerné et description du problème sont requis', true);
+    return;
+  }
+
+  const payload = {
+    clientName, clientPhone, saleRef,
+    deviceBrand, deviceModel, deviceImei,
+    issue, resolutionType
+  };
+
+  if(resolutionType === 'remplacement'){
+    const replSelect = document.getElementById('c-replacement-select');
+    if(!replSelect.value){ toast('Choisissez l\'article de remplacement remis au client', true); return; }
+    payload.replacementProductId = replSelect.value;
+    payload.complement = Number(document.getElementById('c-complement').value)||0;
+  }
+  if(resolutionType === 'rejet'){
+    payload.issue = issue + ' — Motif du rejet : ' + document.getElementById('c-rejet-motif').value.trim();
+  }
+
+  try{
+    await api('POST', '/claims', payload);
+    closeModal();
+    toast('Réclamation enregistrée');
+    await refreshAll();
+  }catch(e){ toast(e.message, true); }
+}
+
+function claimDocHTML(c){
+  const s = state.settings || {};
+  const dateStr = new Date(c.date).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
+  const ticketNo = 'CLM-' + (c.id||'').slice(0,6).toUpperCase();
+  const device = c.device || {};
+  const specs = [device.color, device.storage, device.ram].filter(Boolean).join(' · ');
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Fiche réclamation ${esc(ticketNo)}</title>
+<style>
+  @page{ margin: 18mm 14mm; }
+  *{box-sizing:border-box;}
+  body{ font-family:'Segoe UI', Arial, sans-serif; color:#181A22; margin:0; padding:28px; background:#F6F4EE; }
+  .sheet{ max-width:760px; margin:0 auto; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 10px 30px rgba(17,20,42,.12); }
+  .r-head{ background:linear-gradient(135deg,#1D2142,#11142A); color:#F6F4EE; padding:32px 36px; display:flex; justify-content:space-between; align-items:flex-start; }
+  .r-head h1{ margin:0; font-size:22px; }
+  .r-head .r-sub{ color:#F0C878; font-size:11.5px; font-weight:600; margin-top:4px; letter-spacing:.5px; }
+  .r-head .r-legal{ font-size:11px; color:#B7BAD0; margin-top:10px; line-height:1.6; }
+  .r-head .r-badge{ text-align:right; }
+  .r-head .r-badge .r-no{ font-size:13px; font-weight:700; color:#F0C878; }
+  .r-head .r-badge .r-date{ font-size:11.5px; color:#B7BAD0; margin-top:4px; }
+  .r-body{ padding:30px 36px; }
+  .r-section{ margin-bottom:22px; }
+  .r-section h4{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#8B8E9C; margin:0 0 10px 0; border-bottom:2px solid #EFEBE0; padding-bottom:8px; }
+  .r-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .r-label{ font-size:10.5px; color:#8B8E9C; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+  .r-value{ font-size:14px; font-weight:600; margin-top:3px; }
+  .r-issue-box{ background:#F6F4EE; border-radius:10px; padding:14px 16px; font-size:13px; line-height:1.6; margin-top:6px; }
+  .r-status{ display:inline-block; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:700; background:#1D2142; color:#F0C878; }
+  .r-foot{ display:flex; justify-content:space-between; align-items:flex-end; margin-top:30px; padding-top:20px; border-top:1px dashed #D8D4C8; }
+  .r-foot .r-thanks{ font-size:11.5px; color:#8B8E9C; max-width:340px; line-height:1.5; }
+  .r-foot .r-sign{ text-align:center; font-size:12px; color:#5B5E6E; }
+  .r-foot .r-sign .r-sign-line{ margin-top:38px; border-top:1px solid #181A22; padding-top:6px; width:170px; font-weight:600; color:#181A22; }
+  .r-actions{ max-width:760px; margin:18px auto 0 auto; display:flex; gap:10px; justify-content:flex-end; }
+  .r-actions button{ font-family:inherit; border:none; cursor:pointer; border-radius:9px; font-size:13.5px; font-weight:600; padding:10px 18px; }
+  .r-print{ background:#11142A; color:#F0C878; }
+  .r-close{ background:transparent; border:1px solid #D8D4C8; color:#181A22; }
+  @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; border-radius:0; } .r-actions{ display:none; } }
+</style></head>
+<body>
+  <div class="sheet">
+    <div class="r-head">
+      <div>
+        <h1>${esc(s.shopName||'Ma Boutique')}</h1>
+        <div class="r-sub">FICHE DE RÉCLAMATION — SERVICE APRÈS-VENTE</div>
+        <div class="r-legal">${s.rccm?('RCCM : '+esc(s.rccm)+'<br>'):''}${s.phone?('Tél : '+esc(s.phone)):''}</div>
+      </div>
+      <div class="r-badge">
+        <div class="r-no">TICKET N° ${esc(ticketNo)}</div>
+        <div class="r-date">${dateStr}</div>
+      </div>
+    </div>
+    <div class="r-body">
+      <div class="r-section">
+        <h4>Client</h4>
+        <div class="r-grid">
+          <div><div class="r-label">Nom</div><div class="r-value">${esc(c.clientName)}</div></div>
+          <div><div class="r-label">Téléphone</div><div class="r-value">${esc(c.clientPhone||'—')}</div></div>
+        </div>
+        ${c.saleRef?`<div style="margin-top:12px;"><div class="r-label">Référence de la vente d'origine</div><div class="r-value">${esc(c.saleRef)}</div></div>`:''}
+      </div>
+      <div class="r-section">
+        <h4>Appareil concerné</h4>
+        <div class="r-grid">
+          <div><div class="r-label">Marque / Modèle</div><div class="r-value">${esc(device.brand?device.brand+' ':'')}${esc(device.model||'')}</div></div>
+          <div><div class="r-label">IMEI</div><div class="r-value">${esc(device.imei||'—')}</div></div>
+        </div>
+        ${specs?`<div style="margin-top:8px;"><div class="r-label">Caractéristiques</div><div class="r-value">${esc(specs)}</div></div>`:''}
+      </div>
+      <div class="r-section">
+        <h4>Problème constaté</h4>
+        <div class="r-issue-box">${esc(c.issue)}</div>
+      </div>
+      <div class="r-section">
+        <h4>Résolution</h4>
+        <div class="r-value" style="margin-bottom:10px;">${esc(RESOLUTION_LABELS[c.resolutionType]||c.resolutionType)}</div>
+        ${c.replacement?`<div class="r-grid"><div><div class="r-label">Appareil remis</div><div class="r-value">${esc(c.replacement.name)}</div></div><div><div class="r-label">Complément payé</div><div class="r-value">${fmt(c.complement||0)}</div></div></div>`:''}
+      </div>
+      <div class="r-section">
+        <h4>Statut du dossier</h4>
+        <span class="r-status">${(CLAIM_STATUS_LABELS[c.status]||['','—'])[1]}</span>
+      </div>
+      <div class="r-foot">
+        <div class="r-thanks">Ce document atteste de l'enregistrement de votre réclamation par nos services. Conservez-le, il pourra vous être demandé pour le suivi de votre dossier.</div>
+        <div class="r-sign"><div class="r-sign-line">Le Responsable SAV</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="r-actions">
+    <button class="r-close" onclick="window.close()">Fermer</button>
+    <button class="r-print" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  </div>
+</body></html>`;
+}
+function openClaimDoc(claim){
+  const w = window.open('', '_blank');
+  if(!w){ toast('Autorisez les fenêtres pop-up pour voir la fiche', true); return; }
+  w.document.open();
+  w.document.write(claimDocHTML(claim));
+  w.document.close();
+}
+
+/* ======================================================================
    TROC
    ====================================================================== */
 function renderTroc(){
@@ -756,7 +1096,7 @@ function renderTroc(){
             ${selectWithOther('t-inram', 'RAM', PHONE_RAM, '')}
             <div class="field"><label>IMEI (optionnel)</label><input id="t-imei" placeholder="35 892 601 xxxxxx"></div>
           </div>
-          <div class="field"><label>État de l'appareil</label><div class="cond-chips" id="t-cond">${['Excellent','Bon','Moyen','Mauvais'].map(c=>`<div class="cond-chip ${selectedTrocCondition===c?'sel':''}" data-cond="${c}">${c}</div>`).join('')}</div></div>
+          <div class="field"><label>État de l'appareil</label><div class="cond-chips" id="t-cond">${PHONE_CONDITIONS.map(c=>`<div class="cond-chip ${selectedTrocCondition===c?'sel':''}" data-cond="${c}">${c}</div>`).join('')}</div></div>
           <div class="field-row"><div class="field"><label>Valeur de reprise (${CURRENCY})</label><input id="t-invalue" type="number"></div><div class="field"><label>Client</label><input id="t-client"></div></div>
         </div>
         <div class="troc-panel out">
@@ -1309,7 +1649,7 @@ function attachScreenHandlers(screen){
   reportSummaryCache = screen === 'reports' ? reportSummaryCache : null;
   const map = {
     pos: posHandlers, inventory: inventoryHandlers, clients: clientsHandlers,
-    repairs: repairsHandlers, troc: trocHandlers, suppliers: suppliersHandlers,
+    repairs: repairsHandlers, claims: claimsHandlers, troc: trocHandlers, suppliers: suppliersHandlers,
     expenses: expensesHandlers, reports: reportsHandlers, employees: employeesHandlers,
     settings: settingsHandlers
   };

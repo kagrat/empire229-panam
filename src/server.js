@@ -159,7 +159,7 @@ app.post("/api/products", requireAuth, async (req, res) => {
     brand: brand || "",
     name,
     category: category || "Téléphones",
-    condition: condition || "Neuf",
+    condition: condition || "Scellé",
     color: color || "",
     storage: storage || "",
     ram: ram || "",
@@ -352,7 +352,7 @@ app.post("/api/trocs", requireAuth, async (req, res) => {
     brand: deviceInBrand || "",
     name: `${deviceInModel} (reprise)`,
     category: "Occasion / Reprise",
-    condition: req.body.condition || "Bon",
+    condition: req.body.condition || "Occasion",
     color: deviceInColor || "",
     storage: deviceInStorage || "",
     ram: deviceInRam || "",
@@ -386,6 +386,89 @@ app.post("/api/trocs", requireAuth, async (req, res) => {
     soldBy: req.user.name
   });
   res.status(201).json(troc);
+});
+
+/* ------------------------------------------------------------------ */
+/* Réclamations (SAV / retour après-vente, avec remplacement possible)  */
+/* ------------------------------------------------------------------ */
+
+app.get("/api/claims", requireAuth, (req, res) => res.json(db.all("claims")));
+
+app.post("/api/claims", requireAuth, async (req, res) => {
+  const {
+    clientName, clientPhone, saleRef,
+    deviceBrand, deviceModel, deviceColor, deviceStorage, deviceRam, deviceImei,
+    issue, resolutionType, replacementProductId, complement, paymentMethod
+  } = req.body || {};
+
+  if (!clientName || !deviceModel || !issue || !resolutionType) {
+    return res.status(400).json({ error: "Client, appareil concerné, problème et type de résolution sont requis." });
+  }
+
+  let replacement = null;
+  const complementAmount = Math.max(0, Number(complement) || 0);
+
+  if (resolutionType === "remplacement") {
+    if (!replacementProductId) {
+      return res.status(400).json({ error: "Choisissez l'appareil de remplacement remis au client." });
+    }
+    const product = db.findById("products", replacementProductId);
+    if (!product) return res.status(400).json({ error: "Article de remplacement introuvable." });
+    if (product.stock < 1) return res.status(409).json({ error: "Article de remplacement en rupture de stock." });
+
+    await db.update("products", product.id, { stock: product.stock - 1 });
+    replacement = { productId: product.id, name: product.name, price: product.price };
+
+    if (complementAmount > 0) {
+      await db.insert("sales", {
+        date: new Date().toISOString(),
+        items: [{ productId: product.id, name: product.name + " (réclamation)", price: complementAmount, qty: 1 }],
+        total: complementAmount,
+        paymentMethod: paymentMethod || "Espèces",
+        clientId: null,
+        clientName,
+        soldBy: req.user.name
+      });
+    }
+  }
+
+  const claim = await db.insert("claims", {
+    date: new Date().toISOString(),
+    clientName,
+    clientPhone: clientPhone || "",
+    saleRef: saleRef || "",
+    device: {
+      brand: deviceBrand || "",
+      model: deviceModel,
+      color: deviceColor || "",
+      storage: deviceStorage || "",
+      ram: deviceRam || "",
+      imei: deviceImei || ""
+    },
+    issue,
+    resolutionType,
+    replacement,
+    complement: complementAmount,
+    status: "ouverte",
+    handledBy: req.user.name
+  });
+  res.status(201).json(claim);
+});
+
+app.patch("/api/claims/:id", requireAuth, async (req, res) => {
+  const { status } = req.body || {};
+  if (!["ouverte", "en_cours", "resolue", "refusee"].includes(status)) {
+    return res.status(400).json({ error: "Statut invalide." });
+  }
+  const updated = await db.update("claims", req.params.id, { status });
+  if (!updated) return res.status(404).json({ error: "Réclamation introuvable." });
+  res.json(updated);
+});
+
+app.delete("/api/claims/:id", requireAuth, requireOwner, async (req, res) => {
+  const ok = await db.remove("claims", req.params.id);
+  if (!ok) return res.status(404).json({ error: "Réclamation introuvable." });
+  res.json({ ok: true });
 });
 
 /* ------------------------------------------------------------------ */

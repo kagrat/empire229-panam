@@ -24,6 +24,7 @@ const DEFAULT_DATA = {
   sales: [],
   clients: [],
   repairs: [],
+  claims: [],
   trocs: [],
   suppliers: [],
   expenses: [],
@@ -44,6 +45,23 @@ function ensureFile() {
 ensureFile();
 
 let cache = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+
+// Auto-réparation : si l'application évolue et ajoute une nouvelle
+// collection (ex. "claims" pour les réclamations), une base de données
+// déjà existante en production ne l'aura pas encore. On la crée vide au
+// lieu de planter, pour ne jamais casser un déploiement suite à une
+// mise à jour du code.
+let neededRepair = false;
+for (const key of Object.keys(DEFAULT_DATA)) {
+  if (!(key in cache)) {
+    cache[key] = Array.isArray(DEFAULT_DATA[key]) ? [] : DEFAULT_DATA[key];
+    neededRepair = true;
+  }
+}
+if (neededRepair) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(cache, null, 2), "utf-8");
+}
+
 let writeQueue = Promise.resolve();
 
 function persist() {
